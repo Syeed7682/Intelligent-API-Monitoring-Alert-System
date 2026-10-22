@@ -89,8 +89,6 @@ When an event triggers both `SERVER_ERROR` and `HIGH_LATENCY`/`ZERO_RECORDS`, or
 
 ```
 Ai Automation/
-├── AI_Prompts.docx            # Structured Word document with all AI prompts & design specs
-├── generate_docx.py           # Automated docx generation script
 ├── launch.sh                  # One-command Bash launch script (starts backend & frontend)
 ├── launch.bat                 # Windows one-click launcher script
 ├── package.json               # Root package script runner
@@ -245,8 +243,6 @@ npm run ingest path/to/your_telemetry.json
 | Deliverable | Location | Description |
 |---|---|---|
 | **Video Presentation Script** | [`SCRIPT.md`](file:///c:/Users/Syeed%20Asif/Desktop/Ai%20Automation/SCRIPT.md) | Word-for-word 5–10 minute technical explanation & live demo script |
-| **AI Prompts Document** | [`AI_Prompts.docx`](file:///c:/Users/Syeed%20Asif/Desktop/Ai%20Automation/AI_Prompts.docx) | Formal documentation of prompts, guardrails, and validation logic |
-| **Sample Telemetry Data** | [`sample_input.json`](file:///c:/Users/Syeed%20Asif/Desktop/Ai%20Automation/sample_input.json) | Reference static JSON input for instant testing |
 | **Automated Test Suite** | `backend/tests/` | 53 unit and integration tests passing (`npm test`) |
 
 ---
@@ -368,18 +364,3 @@ Test Results Breakdown:
 - `tests/api.test.js`: 18 tests (POST `/api/monitor`, GET `/api/alerts`, PATCH transitions, 404 handler, `/health`).
 
 ---
-
-## AI Prompt Documentation
-
-The project includes `AI_Prompts.docx`, an executive technical document detailing:
-- System Prompt architecture and guardrails
-- Dynamic user prompt generation
-- Few-shot examples and evaluation criteria
-- Model selection and cost-efficiency trade-offs
-- Graceful degradation workflows
-
-To regenerate `AI_Prompts.docx`:
-```bash
-python generate_docx.py
-```
-Output: `AI_Prompts.docx` in the root workspace folder.

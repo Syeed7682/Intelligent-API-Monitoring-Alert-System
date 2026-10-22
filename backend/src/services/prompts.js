@@ -1,9 +1,8 @@
 /**
  * AI Alert Generation Prompts
  *
- * IMPORTANT: These prompts are used at runtime by the application's LLM service.
- * They are distinct from the prompts used by the coding agent to build this system.
- * See AI_Prompts.docx for full documentation.
+ * These prompts are used at runtime by the application's LLM service
+ * to synthesize human-readable alerts from detected anomalies.
  */
 
 export const SYSTEM_PROMPT = `You are an API monitoring assistant for a software operations team.

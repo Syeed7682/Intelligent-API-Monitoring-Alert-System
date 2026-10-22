@@ -33,7 +33,9 @@ Thumbs.db
 *.swp
 *.swo
 
-# Temporary Microsoft Office lock & tmp files
+# Microsoft Office documents & lock/tmp files
 ~$*
 ~*
 *.tmp
+*.docx
+*.doc
