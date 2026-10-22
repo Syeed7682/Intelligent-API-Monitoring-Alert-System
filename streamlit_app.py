@@ -1,320 +1,313 @@
 import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
 import requests
 import json
+import pandas as pd
+import plotly.express as px
 from datetime import datetime
 
 # Page configuration
 st.set_page_config(
-    page_title="Intelligent API Monitor - Dynamic Telemetry Studio",
-    page_icon="⚡",
+    page_title="API Monitor & Alert System",
+    page_icon="🛡️",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
-# Custom dark-theme CSS matching the monitoring dashboard aesthetics
+# Custom Styling for modern dark theme
 st.markdown("""
 <style>
-    .main {
-        background-color: #0b0f19;
-        color: #f1f5f9;
-    }
-    .stMetric {
-        background-color: #131b2e;
-        padding: 14px;
-        border-radius: 10px;
-        border: 1px solid rgba(255,255,255,0.06);
-    }
     .metric-card {
-        background: #131b2e;
-        border: 1px solid #1e293b;
-        padding: 16px;
-        border-radius: 10px;
-        margin-bottom: 12px;
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.8) 100%);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 12px;
+        padding: 18px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
     }
-    .badge-critical {
-        color: #ef4444;
-        background: rgba(239, 68, 68, 0.15);
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-weight: 600;
-        font-size: 12px;
-    }
-    .badge-high {
-        color: #f97316;
-        background: rgba(249, 115, 22, 0.15);
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-weight: 600;
-        font-size: 12px;
-    }
-    .badge-normal {
-        color: #10b981;
-        background: rgba(16, 185, 129, 0.15);
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-weight: 600;
-        font-size: 12px;
-    }
+    .badge-critical { background-color: #ef4444; color: white; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
+    .badge-high { background-color: #f97316; color: white; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
+    .badge-medium { background-color: #eab308; color: black; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
+    .badge-low { background-color: #3b82f6; color: white; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
-# Default initial telemetry dataset
-DEFAULT_TELEMETRY = [
-    {"api_name": "PatientDataAPI", "response_time_ms": 1200, "status_code": 200, "records_returned": 50, "threshold_ms": 3000},
-    {"api_name": "AppointmentAPI", "response_time_ms": 5500, "status_code": 500, "records_returned": 0, "threshold_ms": 3000},
-    {"api_name": "BillingAPI", "response_time_ms": 2800, "status_code": 200, "records_returned": 120, "threshold_ms": 3000},
-    {"api_name": "InventoryAPI", "response_time_ms": 420, "status_code": 200, "records_returned": 85, "threshold_ms": 3000},
-    {"api_name": "AuthService", "response_time_ms": 95, "status_code": 200, "records_returned": 1, "threshold_ms": 1500},
-]
+# Configuration
+API_BASE = "http://localhost:3001"
 
-# Initialize session state for editable telemetry
-if "telemetry_data" not in st.session_state:
-    st.session_state.telemetry_data = pd.DataFrame(DEFAULT_TELEMETRY)
-
-# Sidebar configuration
-st.sidebar.title("⚡ Control Center")
-st.sidebar.markdown("Configure threshold policies and backend endpoints.")
-
-backend_url = st.sidebar.text_input("Backend API Endpoint", value="http://localhost:3001/monitor")
-global_threshold = st.sidebar.slider("Global Threshold (ms)", min_value=500, max_value=8000, value=3000, step=100)
-apply_global_threshold = st.sidebar.checkbox("Override row thresholds with global slider", value=False)
-chart_style = st.sidebar.radio("Trend Chart View", ["Line & Points", "Bar Comparison", "Area Graph"])
-
-st.sidebar.markdown("---")
-uploaded_file = st.sidebar.file_uploader("Upload Telemetry JSON", type=["json"])
-if uploaded_file is not None:
+# Helper Functions
+def check_backend_health():
     try:
-        content = json.load(uploaded_file)
-        if isinstance(content, list):
-            new_df = pd.DataFrame(content)
-            if "threshold_ms" not in new_df.columns:
-                new_df["threshold_ms"] = global_threshold
-            st.session_state.telemetry_data = new_df
-            st.sidebar.success(f"Loaded {len(new_df)} records from file!")
-    except Exception as e:
-        st.sidebar.error(f"Error loading JSON: {e}")
+        r = requests.get(f"{API_BASE}/health", timeout=2)
+        if r.status_code in [200, 503]:
+            return r.json()
+    except Exception:
+        pass
+    return None
 
-if st.sidebar.button("Reset to Default Sample"):
-    st.session_state.telemetry_data = pd.DataFrame(DEFAULT_TELEMETRY)
+def fetch_alerts(status_filter=None, severity_filter=None):
+    try:
+        params = {"limit": 100}
+        if status_filter and status_filter != "all":
+            params["status"] = status_filter
+        if severity_filter and severity_filter != "all":
+            params["severity"] = severity_filter
+            
+        r = requests.get(f"{API_BASE}/alerts", params=params, timeout=3)
+        if r.status_code == 200:
+            return r.json().get("alerts", [])
+    except Exception as e:
+        st.error(f"Failed to fetch alerts: {e}")
+    return []
+
+def submit_telemetry(payload):
+    try:
+        r = requests.post(f"{API_BASE}/monitor", json=payload, timeout=10)
+        return r.status_code, r.json()
+    except Exception as e:
+        return 500, {"error": str(e)}
+
+def update_alert_status(alert_id, action):
+    try:
+        r = requests.patch(f"{API_BASE}/api/alerts/{alert_id}/{action}", timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+def send_alert_email(alert_id, recipient):
+    try:
+        r = requests.post(f"{API_BASE}/api/alerts/{alert_id}/email", json={"recipient": recipient}, timeout=5)
+        return r.status_code == 200, r.json()
+    except Exception as e:
+        return False, {"error": str(e)}
+
+# --- Header & Status ---
+health = check_backend_health()
+
+col_title, col_status = st.columns([3, 1])
+
+with col_title:
+    st.title("🛡️ Intelligent API Monitoring & Alert System")
+    st.caption("Automated API response evaluation, deterministic anomaly detection & AI alerts")
+
+with col_status:
+    if health and health.get("status") in ["healthy", "degraded"]:
+        db_stat = health.get("services", {}).get("database", {}).get("status", "unknown")
+        if db_stat == "connected":
+            st.success("🟢 Backend & MongoDB Online")
+        else:
+            st.warning("🟡 Degraded (In-Memory Fallback)")
+    else:
+        st.error("🔴 Backend Offline (Start with `npm run dev`)")
+
+st.divider()
+
+# --- Sidebar Controls ---
+st.sidebar.header("⚙️ Controls & Navigation")
+view_mode = st.sidebar.radio("Navigate View", ["📊 Incident Dashboard", "📡 Ingest Events", "📈 Metrics & Analytics"])
+
+st.sidebar.divider()
+st.sidebar.subheader("🔍 Alert Filters")
+filter_status = st.sidebar.selectbox("Filter by Status", ["all", "active", "acknowledged", "resolved"])
+filter_severity = st.sidebar.selectbox("Filter by Severity", ["all", "critical", "high", "medium", "low"])
+
+# Refresh button
+if st.sidebar.button("🔄 Refresh Data", width="stretch"):
     st.rerun()
 
-# Main Title & Header
-st.title("Intelligent API Monitoring — Dynamic Studio")
-st.caption("Live editable telemetry playground with dynamic response time trend visualization & real-time anomaly detection.")
+# Fetch Alerts
+alerts = fetch_alerts(filter_status, filter_severity)
 
-# Dynamic Data Editor Section
-st.subheader("📝 Edit Telemetry Data (Interactive Table)")
-st.write("You can directly click and edit any cell below, add rows, or delete records. The chart updates instantaneously.")
+# ==========================================
+# VIEW 1: Incident Dashboard
+# ==========================================
+if view_mode == "📊 Incident Dashboard":
+    # Metrics KPI cards
+    all_alerts = fetch_alerts()
+    active_count = sum(1 for a in all_alerts if a.get("status") == "active")
+    crit_count = sum(1 for a in all_alerts if a.get("severity") == "critical")
+    resolved_count = sum(1 for a in all_alerts if a.get("status") == "resolved")
 
-edited_df = st.data_editor(
-    st.session_state.telemetry_data,
-    num_rows="dynamic",
-    use_container_width=True,
-    column_config={
-        "api_name": st.column_config.TextColumn("API Name", required=True),
-        "response_time_ms": st.column_config.NumberColumn("Response Time (ms)", min_value=0, max_value=20000, step=50, required=True),
-        "status_code": st.column_config.NumberColumn("HTTP Status Code", min_value=100, max_value=599, step=1, required=True),
-        "records_returned": st.column_config.NumberColumn("Records Returned", min_value=0, step=1, required=True),
-        "threshold_ms": st.column_config.NumberColumn("Threshold (ms)", min_value=100, max_value=15000, step=100),
-    },
-    key="telemetry_editor"
-)
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1.metric("Total Incidents", len(all_alerts))
+    kpi2.metric("Active Anomalies", active_count, delta="Requires Attention" if active_count > 0 else None, delta_color="inverse")
+    kpi3.metric("Critical Alerts", crit_count, delta="Severe" if crit_count > 0 else None, delta_color="inverse")
+    kpi4.metric("Resolved", resolved_count)
 
-# Sync edits back to session state
-st.session_state.telemetry_data = edited_df
+    st.subheader(f"Incidents ({len(alerts)})")
 
-# If override requested, replace threshold column
-df = edited_df.copy()
-if apply_global_threshold or "threshold_ms" not in df.columns:
-    df["threshold_ms"] = global_threshold
+    if not alerts:
+        st.info("✨ No anomalies matching current filters. Ingest telemetry events from the sidebar to test.")
+    else:
+        for alert in alerts:
+            alert_id = alert.get("_id") or alert.get("id")
+            sev = alert.get("severity", "low").lower()
+            status = alert.get("status", "active")
+            
+            # Color accents
+            border_color = "#ef4444" if sev == "critical" else ("#f97316" if sev == "high" else "#eab308")
 
-# KPI Metric Cards Row
-col1, col2, col3, col4 = st.columns(4)
-total_apis = len(df)
-avg_latency = int(df["response_time_ms"].mean()) if not df.empty else 0
-max_latency = int(df["response_time_ms"].max()) if not df.empty else 0
-breached_count = len(df[df["response_time_ms"] > df["threshold_ms"]]) if not df.empty else 0
+            with st.container():
+                st.markdown(f"""
+                <div style="border-left: 5px solid {border_color}; background: rgba(30, 41, 59, 0.4); padding: 14px 18px; border-radius: 8px; margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h4 style="margin: 0; color: #f8fafc;">{alert.get('api_name')} &nbsp;·&nbsp; <span style="font-size: 14px; font-weight: normal; color: #94a3b8;">{alert.get('title')}</span></h4>
+                        <div>
+                            <span class="badge-{sev}">{sev.upper()}</span> &nbsp;
+                            <span style="background: rgba(148, 163, 184, 0.2); padding: 4px 8px; border-radius: 6px; font-size: 12px;">{status.upper()}</span>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
-with col1:
-    st.metric("Total Endpoints", total_apis)
-with col2:
-    st.metric("Avg Response Time", f"{avg_latency} ms")
-with col3:
-    st.metric("Peak Response Time", f"{max_latency} ms")
-with col4:
-    st.metric("Threshold Breaches", breached_count, delta=f"{breached_count} alerts" if breached_count > 0 else "Normal", delta_color="inverse")
+                col_details, col_actions = st.columns([3, 1])
 
-st.markdown("---")
+                with col_details:
+                    st.write(f"**AI Incident Message:** {alert.get('message', 'No message available.')}")
+                    
+                    with st.expander("🔍 View Root Causes & Diagnostic Steps"):
+                        st.write(f"**Recommended Action:** {alert.get('recommendation', 'Inspect server logs.')}")
+                        st.write("**Probable Causes:**")
+                        for cause in alert.get("possible_causes", []):
+                            st.write(f"- {cause}")
 
-# Dynamic Chart Section
-st.subheader("📈 RESPONSE TIME TREND")
+                        raw = alert.get("raw_event", {})
+                        if raw:
+                            st.write("**Raw Telemetry Data:**")
+                            st.json(raw)
 
-if df.empty:
-    st.warning("No telemetry records available to display. Add rows in the table above.")
-else:
-    # Build customized Plotly figure matching user's exact dark aesthetic
-    fig = go.Figure()
+                with col_actions:
+                    if status != "acknowledged":
+                        if st.button("Acknowledge", key=f"ack_{alert_id}", width="stretch"):
+                            if update_alert_status(alert_id, "acknowledge"):
+                                st.success("Acknowledged")
+                                st.rerun()
 
-    # Determine colors for points: blue normal, red/orange if threshold breached
-    point_colors = [
-        "#3b82f6" if row["response_time_ms"] <= row["threshold_ms"] and row["status_code"] < 400
-        else "#ef4444"
-        for _, row in df.iterrows()
-    ]
+                    if status != "resolved":
+                        if st.button("Resolve", key=f"res_{alert_id}", width="stretch"):
+                            if update_alert_status(alert_id, "resolve"):
+                                st.success("Resolved")
+                                st.rerun()
 
-    if chart_style == "Line & Points":
-        # Response Time Line & Markers
-        fig.add_trace(go.Scatter(
-            x=df["api_name"],
-            y=df["response_time_ms"],
-            mode="lines+markers",
-            name="Response Time",
-            line=dict(color="#3b82f6", width=2.5),
-            marker=dict(size=12, color=point_colors, symbol="circle", line=dict(color="#1e293b", width=1.5)),
-            hovertemplate="<b>%{x}</b><br>Observed: %{y} ms<extra></extra>"
-        ))
+                    with st.popover("✉️ Email Alert", width="stretch"):
+                        rec_email = st.text_input("Recipient Email", "oncall-team@example.com", key=f"em_{alert_id}")
+                        if st.button("Send Report", key=f"send_em_{alert_id}"):
+                            ok, res = send_alert_email(alert_id, rec_email)
+                            if ok:
+                                st.success(f"Dispatched to {rec_email}")
+                            else:
+                                st.error("Email dispatch failed")
 
-        # Threshold Line & Markers
-        fig.add_trace(go.Scatter(
-            x=df["api_name"],
-            y=df["threshold_ms"],
-            mode="lines+markers",
-            name="Threshold",
-            line=dict(color="#ef4444", width=2, dash="dash"),
-            marker=dict(size=9, color="#ef4444", symbol="circle-open"),
-            hovertemplate="<b>%{x} Threshold</b>: %{y} ms<extra></extra>"
-        ))
+                st.write("")
 
-    elif chart_style == "Bar Comparison":
-        fig.add_trace(go.Bar(
-            x=df["api_name"],
-            y=df["response_time_ms"],
-            name="Response Time",
-            marker_color=point_colors,
-            hovertemplate="<b>%{x}</b><br>Observed: %{y} ms<extra></extra>"
-        ))
-        fig.add_trace(go.Scatter(
-            x=df["api_name"],
-            y=df["threshold_ms"],
-            mode="markers+lines",
-            name="Threshold",
-            line=dict(color="#ef4444", width=2, dash="dash"),
-            marker=dict(size=10, color="#ffffff"),
-            hovertemplate="<b>%{x} Threshold</b>: %{y} ms<extra></extra>"
-        ))
+# ==========================================
+# VIEW 2: Ingest Events
+# ==========================================
+elif view_mode == "📡 Ingest Events":
+    st.subheader("Submit Live Telemetry Events")
+    st.write("Upload a static JSON file or paste arbitrary telemetry events to run through the anomaly detection pipeline and store in MongoDB.")
 
-    else: # Area Graph
-        fig.add_trace(go.Scatter(
-            x=df["api_name"],
-            y=df["response_time_ms"],
-            fill='tozeroy',
-            name="Response Time",
-            line=dict(color="#3b82f6", width=2),
-            fillcolor='rgba(59, 130, 246, 0.15)',
-        ))
-        fig.add_trace(go.Scatter(
-            x=df["api_name"],
-            y=df["threshold_ms"],
-            mode="lines",
-            name="Threshold",
-            line=dict(color="#ef4444", width=2, dash="dash"),
-        ))
+    tab_upload, tab_paste = st.tabs(["📁 Upload JSON File", "✍️ Paste Custom JSON"])
 
-    # Dark background layout styling
-    fig.update_layout(
-        template="plotly_dark",
-        plot_bgcolor="#0d1322",
-        paper_bgcolor="#0b0f19",
-        margin=dict(l=40, r=40, t=20, b=40),
-        height=380,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=-0.25,
-            xanchor="center",
-            x=0.5,
-            font=dict(color="#94a3b8")
-        ),
-        xaxis=dict(
-            gridcolor="#1e293b",
-            zerolinecolor="#1e293b",
-            tickfont=dict(color="#94a3b8", size=12)
-        ),
-        yaxis=dict(
-            title="Latency (ms)",
-            gridcolor="#1e293b",
-            zerolinecolor="#1e293b",
-            tickfont=dict(color="#94a3b8", size=12)
-        ),
-        hovermode="x unified"
-    )
+    input_data = None
 
-    st.plotly_chart(fig, use_container_width=True)
-
-st.markdown("---")
-
-# Actions & Backend Ingestion Section
-col_act1, col_act2 = st.columns([2, 1])
-
-with col_act1:
-    st.subheader("🚀 Live Ingestion & AI Alert Pipeline")
-    st.write("Submit the active table data directly to the Node.js backend (`POST /monitor`) to trigger AI alert synthesis and store in MongoDB Atlas.")
-
-    if st.button("📡 Send Current Table to Backend (/monitor)", type="primary"):
-        records_to_send = []
-        for _, row in df.iterrows():
-            record = {
-                "api_name": str(row["api_name"]),
-                "response_time_ms": int(row["response_time_ms"]),
-                "status_code": int(row["status_code"]),
-                "records_returned": int(row["records_returned"])
-            }
-            records_to_send.append(record)
-
-        with st.spinner("Submitting to backend and generating AI alerts..."):
+    with tab_upload:
+        uploaded_file = st.file_uploader("Upload .json file containing API telemetry", type=["json"])
+        if uploaded_file is not None:
             try:
-                res = requests.post(
-                    backend_url,
-                    json=records_to_send,
-                    headers={"Content-Type": "application/json"},
-                    timeout=10
-                )
-                if res.status_code == 200:
-                    payload = res.json()
-                    st.success(f"✅ Ingestion successful! Server processed {payload.get('summary', {}).get('processed', len(records_to_send))} events.")
+                input_data = json.load(uploaded_file)
+                st.success(f"Loaded JSON file successfully ({len(input_data) if isinstance(input_data, list) else 1} events)")
+            except Exception as e:
+                st.error(f"Invalid JSON file: {e}")
 
-                    summary = payload.get("summary", {})
-                    s_col1, s_col2, s_col3 = st.columns(3)
-                    s_col1.metric("Alerts Generated", summary.get("alerts_generated", 0))
-                    s_col2.metric("Healthy Endpoints", summary.get("healthy_responses", 0))
-                    s_col3.metric("Invalid Inputs", summary.get("invalid_input", 0))
+    with tab_paste:
+        default_json = """[
+  {
+    "api_name": "PatientDataAPI",
+    "response_time_ms": 1200,
+    "status_code": 200,
+    "records_returned": 50
+  },
+  {
+    "api_name": "AppointmentAPI",
+    "response_time_ms": 5500,
+    "status_code": 500,
+    "records_returned": 0
+  }
+]"""
+        pasted_text = st.text_area("JSON Telemetry Payload", value=default_json, height=220)
+        if st.button("Parse Pasted JSON"):
+            try:
+                input_data = json.loads(pasted_text)
+                st.success("JSON parsed successfully!")
+            except Exception as e:
+                st.error(f"JSON Syntax Error: {e}")
 
-                    alerts = payload.get("alerts", [])
-                    if alerts:
-                        st.markdown("#### 🚨 Generated Alerts:")
-                        for a in alerts:
-                            with st.expander(f"⚠️ {a.get('api_name')} — {a.get('severity', '').upper()}: {a.get('title')}"):
-                                st.write(f"**Status:** `{a.get('status')}` | **Anomalies Count:** {a.get('anomaly_count')}")
-                                st.write(f"**Alert ID:** `{a.get('id')}`")
-                    else:
-                        st.info("✨ All submitted endpoints were healthy. No alerts triggered.")
+    if st.button("🚀 Process & Ingest to Monitoring Engine", type="primary", width="stretch"):
+        if input_data is None:
+            try:
+                input_data = json.loads(pasted_text)
+            except Exception:
+                st.error("Please provide valid JSON input before submitting.")
+
+        if input_data:
+            with st.spinner("Processing telemetry through anomaly detector & AI service..."):
+                status_code, res = submit_telemetry(input_data)
+
+            if status_code == 200:
+                summary = res.get("summary", {})
+                st.success(f"✅ Ingestion Succeeded! Total: {summary.get('total_input')} | Anomalies Detected: {summary.get('alerts_generated')} | Healthy: {summary.get('healthy_responses')}")
+                
+                alerts_gen = res.get("alerts", [])
+                if alerts_gen:
+                    st.write("**Generated Alerts:**")
+                    for a in alerts_gen:
+                        st.warning(f"⚠️ **{a.get('api_name')}** [{a.get('severity', '').upper()}]: {a.get('title')}")
                 else:
-                    st.error(f"Backend returned status {res.status_code}: {res.text}")
-            except Exception as err:
-                st.error(f"Failed to connect to backend server at `{backend_url}`: {err}")
-                st.caption("Ensure `npm run dev` is running the backend on port 3001.")
+                    st.info("✨ All endpoints evaluated normal.")
+            else:
+                st.error(f"❌ Server Error ({status_code}): {res.get('error', res)}")
 
-with col_act2:
-    st.subheader("💾 Export & Backup")
-    st.write("Export your configured telemetry dataset as JSON.")
+# ==========================================
+# VIEW 3: Metrics & Analytics
+# ==========================================
+elif view_mode == "📈 Metrics & Analytics":
+    st.subheader("Telemetry & Severity Analytics")
 
-    export_json = df[["api_name", "response_time_ms", "status_code", "records_returned"]].to_dict(orient="records")
-    st.download_button(
-        label="📥 Download Telemetry as JSON",
-        data=json.dumps(export_json, indent=2),
-        file_name=f"telemetry_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-        mime="application/json",
-        use_container_width=True
-    )
+    if not alerts:
+        st.info("No data available to display charts. Ingest some events first!")
+    else:
+        df = pd.DataFrame(alerts)
+
+        col_c1, col_c2 = st.columns(2)
+
+        with col_c1:
+            st.markdown("#### Severity Distribution")
+            sev_counts = df["severity"].value_counts().reset_index()
+            sev_counts.columns = ["severity", "count"]
+            fig_pie = px.pie(
+                sev_counts, 
+                values="count", 
+                names="severity", 
+                hole=0.45,
+                color="severity",
+                color_discrete_map={"critical": "#ef4444", "high": "#f97316", "medium": "#eab308", "low": "#3b82f6"}
+            )
+            fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig_pie, width="stretch")
+
+        with col_c2:
+            st.markdown("#### Status Breakdown")
+            stat_counts = df["status"].value_counts().reset_index()
+            stat_counts.columns = ["status", "count"]
+            fig_bar = px.bar(
+                stat_counts, 
+                x="status", 
+                y="count", 
+                color="status",
+                color_discrete_map={"active": "#ef4444", "acknowledged": "#3b82f6", "resolved": "#10b981"}
+            )
+            fig_bar.update_layout(margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig_bar, width="stretch")
+
+        st.markdown("#### Detailed Incident Telemetry Log")
+        display_cols = [c for c in ["api_name", "severity", "status", "occurrence_count", "created_at"] if c in df.columns]
+        st.dataframe(df[display_cols], width="stretch")
