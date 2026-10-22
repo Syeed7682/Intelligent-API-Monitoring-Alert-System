@@ -277,18 +277,6 @@ bash launch.sh
 
 ---
 
-### 4. Streamlit Dashboard (Python UI)
-To launch the interactive Python Streamlit dashboard:
-```bash
-streamlit run streamlit_app.py
-# or
-npm run streamlit
-```
-- **Streamlit UI**: Runs on `http://localhost:8501`
-- Includes live incident telemetry, interactive root-cause expanders, event batch uploading, email dispatching, and Plotly analytics.
-
----
-
 ## Getting Started (Manual Setup)
 
 ### Prerequisites
