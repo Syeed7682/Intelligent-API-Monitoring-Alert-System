@@ -39,3 +39,8 @@ Thumbs.db
 *.tmp
 *.docx
 *.doc
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class

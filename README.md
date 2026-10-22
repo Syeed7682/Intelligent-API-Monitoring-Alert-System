@@ -242,8 +242,26 @@ npm run ingest path/to/your_telemetry.json
 
 | Deliverable | Location | Description |
 |---|---|---|
+| **Streamlit Interactive Studio** | [`streamlit_app.py`](file:///c:/Users/Syeed%20Asif/Desktop/Ai%20Automation/streamlit_app.py) | Editable telemetry table with real-time dynamic response time trend charts |
 | **Video Presentation Script** | [`SCRIPT.md`](file:///c:/Users/Syeed%20Asif/Desktop/Ai%20Automation/SCRIPT.md) | Word-for-word 5–10 minute technical explanation & live demo script |
 | **Automated Test Suite** | `backend/tests/` | 53 unit and integration tests passing (`npm test`) |
+
+---
+
+## Streamlit Dynamic Studio (Interactive Telemetry & Charting)
+
+To edit telemetry metrics in an interactive spreadsheet and visualize the **Response Time Trend** dynamically:
+
+```bash
+# Launch Streamlit app
+npm run streamlit
+
+# Or directly with python
+streamlit run streamlit_app.py
+```
+- **Editable Table (`st.data_editor`):** Modify API names, response times, HTTP statuses, and individual thresholds with instant chart updates.
+- **Dynamic Trend Chart:** Live Plotly visualization with response time line/markers, configurable threshold line, and breach alerts.
+- **One-Click Backend Ingestion:** Push the edited telemetry directly to `POST /monitor` to trigger AI alert synthesis and store in MongoDB Atlas.
 
 ---
 
